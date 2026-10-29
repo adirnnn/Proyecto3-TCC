@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Trazas generadas al simular
+trazas/
+*.traza.txt
+
+# Editores y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

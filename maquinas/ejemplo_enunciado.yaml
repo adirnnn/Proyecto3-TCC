@@ -1,0 +1,25 @@
+# Ejemplo copiado tal cual del enunciado (sección 3.1).
+# Usa el formato con memoria: read: [símbolo, memoria], write: [memoria_nueva, símbolo].
+# Solo sirve para comprobar el parsing: no tiene transiciones hacia qf, así que
+# no acepta ninguna de sus entradas.
+mt:
+  states: [q0, q1, q2, qf]
+  input_alphabet: [a, b]
+  tape_alphabet: [a, b, B, X, Y]
+  initial_state: q0
+  accept_states: [qf]
+  transitions:
+    - state: q0
+      read: [a, B]
+      write: [a, B]
+      move: R
+      next: q1
+    - state: q0
+      read: [b, B]
+      write: [b, B]
+      move: R
+      next: q1
+  inputs:
+    - "aabb"
+    - "ab"
+    - "aaabbb"

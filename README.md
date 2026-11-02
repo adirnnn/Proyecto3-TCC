@@ -4,9 +4,9 @@ Proyecto 3 de Teoría de la Computación. Simula Máquinas de Turing (MT)
 deterministas de **una sola cinta** descritas en un archivo YAML y muestra
 todas las descripciones instantáneas (IDs) de cada ejecución.
 
-> Estado: en desarrollo. Están listos el modelo formal y la carga/validación
-> del YAML. El motor, las IDs, la interfaz de terminal y las máquinas de
-> demostración se agregan en las siguientes partes.
+> Estado: en desarrollo. Están listos la carga y validación del YAML, el
+> motor, las IDs y la interfaz de terminal. Las máquinas de demostración
+> (reconocedora y alteradora) se agregan en las siguientes partes.
 
 ## Requisitos e instalación
 
@@ -20,13 +20,56 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
+## Uso
+
+```bash
+python -m simulador_mt maquinas/ejemplo_enunciado.yaml
+```
+
+Simula cada cadena de `inputs` y muestra la definición de la máquina, las
+IDs de cada paso, la configuración final, el resultado y un resumen.
+
+| Opción | Efecto |
+|---|---|
+| `--max-pasos N` | Límite de pasos por entrada (por defecto 10 000). |
+| `--salida RUTA` | Guarda la traza completa en `RUTA` (UTF-8). |
+| `--resumen` | No muestra las IDs en pantalla; el archivo de `--salida` siempre las contiene todas. |
+
+```bash
+python -m simulador_mt maquinas/ejemplo_enunciado.yaml --salida trazas/ejemplo.txt
+```
+
+Para guardar la traza conviene usar `--salida` en lugar de redirigir con `>`:
+en Windows PowerShell la redirección puede cambiar la codificación de `δ` y `⊢`.
+Código de salida: `0` si la máquina se cargó y se simularon las entradas
+(sin importar si fueron aceptadas), `1` si el YAML es inválido o no se pudo
+escribir la traza y `2` si las opciones son incorrectas.
+
+Salida del ejemplo del enunciado para `"aabb"` (este ejemplo no tiene
+transiciones hacia `qf`, así que solo demuestra el parsing):
+
+```
+Descripciones instantáneas (cabezal = posición de la celda leída):
+  0   [q0,B]aabb   cabezal=0
+  1 ⊢ [q1,a]abb    cabezal=1   por #1: δ([q0,B], a) = ([q1,a], B, R)
+...
+Resultado: RECHAZADA
+Motivo: no hay transición para δ([q1,a], a) y [q1,a] no es de aceptación
+Pasos: 1
+```
+
 ## Pruebas
 
 ```bash
 python -m unittest -v
 ```
 
-Las pruebas usan solo `unittest` de la biblioteca estándar.
+Las pruebas usan solo `unittest` de la biblioteca estándar. Cubren la
+validación del YAML, la cinta, cada tipo de terminación, la frontera del
+límite de pasos, el aislamiento entre ejecuciones, la inmutabilidad de las
+configuraciones, el formato de las IDs y la CLI. Además, cada traza probada
+se **reproduce paso a paso**: desde cada configuración y la regla registrada
+se recalcula la siguiente y se compara celda por celda.
 
 ## Formato del archivo YAML
 
@@ -109,20 +152,68 @@ no tiene transiciones hacia `qf` y no acepta ninguna de sus entradas.
 | Determinismo | Dos transiciones para la misma situación (estado, símbolo) son un error de carga, aunque sean idénticas. Nunca se sobrescribe una en silencio. |
 | Transiciones desde un estado de aceptación | Se admiten con advertencia, porque nunca se ejecutan. |
 
-Las convenciones de cinta, aceptación, parada y formato de las IDs se
-documentan con el motor (Parte 2).
+## Semántica de ejecución
+
+**Cinta.** Infinita en ambos sentidos. La entrada ocupa las celdas
+`0..n-1`, el cabezal empieza en la celda 0 y las posiciones negativas son
+válidas. Una celda nunca escrita contiene el blanco. Con la cadena vacía, el
+cabezal empieza sobre un blanco.
+
+**Paso.** Con estado `q` y símbolo leído `a`, si δ(q, a) = (p, X, M): se
+escribe `X` en la celda actual, el cabezal se mueve (`L` −1, `R` +1, `S` 0)
+y el estado pasa a `p`.
+
+**Parada.** Antes de cada paso se comprueba, en este orden:
+
+| Condición | Resultado |
+|---|---|
+| El estado actual es de aceptación | **ACEPTADA** (la máquina se detiene al entrar en él) |
+| δ(estado, símbolo leído) no está definida | **RECHAZADA** |
+| Ya se hicieron `--max-pasos` pasos y aún hay una transición aplicable | **LÍMITE ALCANZADO / resultado no determinado** |
+
+El límite es solo una protección operativa: alcanzarlo **no** significa que
+la cadena sea rechazada, porque no se puede decidir en general si una MT se
+detendrá. Una entrada con símbolos fuera de Σ es **ENTRADA INVÁLIDA**: la
+máquina no se ejecuta y se continúa con la siguiente entrada.
+
+**Descripciones instantáneas.** Se usa la notación α[q]β (Hopcroft): el
+estado aparece entre corchetes justo antes del símbolo que lee el cabezal.
+Por ejemplo, `XaY[q2]bZ` significa estado `q2`, cabezal sobre `b`. Se muestra
+la ventana desde la primera celda no blanca hasta la última, ampliada para
+incluir siempre la celda del cabezal; por eso los blancos relevantes
+aparecen como `B`, por ejemplo `abcB[q]B` o `[q]BBabc` con el cabezal en la
+posición −2. Los estados compuestos del formato con memoria ya llevan
+corchetes y se muestran tal cual: `[q1,a]abb`. Cada línea de la traza indica
+además la posición del cabezal y la regla aplicada (`por #1: δ(q0, a) = ...`).
+
+**Configuración final.** Se muestra en tres filas (posiciones, símbolos y
+cabezal), junto con la ID final y el contenido no blanco **real** de la
+cinta. Si ese contenido incluye símbolos que no son de Σ (marcadores o
+blancos interiores), se indica explícitamente en lugar de ocultarlos.
 
 ## Arquitectura
 
 ```
 simulador_mt/
-  modelo.py     # Transicion y MaquinaTuring inmutables; validación de entradas
-  cargador.py   # YAML seguro → validación completa → MaquinaTuring
+  modelo.py        # Transicion y MaquinaTuring inmutables; validación de entradas
+  cargador.py      # YAML seguro → validación completa → MaquinaTuring
+  cinta.py         # Cinta dispersa: dict posición → símbolo (solo celdas no blancas)
+  motor.py         # ejecutar(): aplica δ paso a paso; Configuracion y Resultado inmutables
+  presentacion.py  # Texto de la máquina, las IDs, la cinta y el resumen
+  __main__.py      # CLI: argumentos, salida UTF-8 y archivo de traza
 maquinas/
   ejemplo_enunciado.yaml
 tests/
-  test_cargador.py
+  test_cargador.py  test_motor.py  test_presentacion.py
 ```
+
+El flujo es YAML → `cargador` → `MaquinaTuring` → `motor.ejecutar` (una vez
+por entrada, cada una con su propia cinta) → `Resultado` con todas las
+`Configuracion` → `presentacion` → terminal y archivo. El motor solo consulta
+δ; no sabe qué lenguaje reconoce ni qué transformación hace la máquina. Cada
+`Configuracion` es una copia inmutable de la cinta en ese paso, no una
+referencia a la cinta viva, así que la traza no cambia aunque la ejecución
+continúe.
 
 `cargador.py` reúne **todos** los errores que encuentra en una pasada y los
 reporta juntos con su ubicación (por ejemplo `transición #3.move: 'D' no es

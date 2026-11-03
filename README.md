@@ -5,8 +5,8 @@ deterministas de **una sola cinta** descritas en un archivo YAML y muestra
 todas las descripciones instantáneas (IDs) de cada ejecución.
 
 > Estado: en desarrollo. Están listos la carga y validación del YAML, el
-> motor, las IDs y la interfaz de terminal. Las máquinas de demostración
-> (reconocedora y alteradora) se agregan en las siguientes partes.
+> motor, las IDs, la interfaz de terminal y la MT reconocedora. La MT
+> alteradora se agrega en la siguiente parte.
 
 ## Requisitos e instalación
 
@@ -191,6 +191,123 @@ cabezal), junto con la ID final y el contenido no blanco **real** de la
 cinta. Si ese contenido incluye símbolos que no son de Σ (marcadores o
 blancos interiores), se indica explícitamente en lugar de ocultarlos.
 
+## MT reconocedora: L = { ww : w ∈ {a,b}* }
+
+Archivo: [`maquinas/reconocedora.yaml`](maquinas/reconocedora.yaml).
+
+```bash
+python -m simulador_mt maquinas/reconocedora.yaml
+```
+
+**Lenguaje.** Cadenas sobre {a, b} formadas por una misma palabra escrita
+dos veces, **sin separador**: `abbabb` (w = `abb`) pertenece a L, `abaabb`
+no. Incluye la cadena vacía (ε = εε). L no es libre de contexto, así que
+ningún autómata de pila lo reconoce. La dificultad está en que la máquina
+tiene que encontrar por sí misma dónde termina la primera mitad.
+
+**Definición formal.** M = (Q, Σ, Γ, δ, q0, B, F) con
+Q = {q0, …, q8, qf}, Σ = {a, b}, Γ = {a, b, X, Y, U, V, Z, W, B} y F = {qf}.
+
+| Marcador | Significado |
+|---|---|
+| `X` / `Y` | `a` / `b` de la primera mitad, aún sin comparar |
+| `U` / `V` | `a` / `b` de la segunda mitad, aún sin comparar |
+| `Z` | símbolo de la primera mitad ya comparado |
+| `W` | símbolo de la segunda mitad ya comparado |
+
+**Fases y estados.**
+
+| Fase | Estado | Papel |
+|---|---|---|
+| 1. Encontrar la mitad | `q0` | En el símbolo libre más a la izquierda: lo marca X/Y. Si lee U/V, ya encontró la mitad. Si lee B, la entrada es ε y acepta. |
+| | `q1` | Avanza a la derecha sobre a/b hasta U, V o B. |
+| | `q2` | Marca U/V el símbolo libre más a la derecha. Si lee X/Y, la longitud es impar y rechaza. |
+| | `q3` | Retrocede sobre a/b hasta la última X/Y. |
+| 2. Rebobinar | `q4` | Va a la izquierda sobre X/Y hasta el blanco. |
+| 3. Comparar | `q5` | En el primer X/Y: lo cambia por Z y pasa a q6 (lleva `a`) o q7 (lleva `b`). Si lee W, acepta. |
+| | `q6` / `q7` | Avanzan sobre X, Y, W hasta el primer U/V. Si coincide, lo cambian por W; si no, rechazan. |
+| | `q8` | Retrocede sobre W, X, Y hasta la última Z. |
+
+**Transiciones** (celda = `siguiente, escribe, mueve`; `—` = no definida,
+la máquina se detiene; `qf` no tiene transiciones):
+
+| δ | a | b | X | Y | U | V | Z | W | B |
+|---|---|---|---|---|---|---|---|---|---|
+| q0 | q1,X,R | q1,Y,R | — | — | q4,U,L | q4,V,L | — | — | qf,B,S |
+| q1 | q1,a,R | q1,b,R | — | — | q2,U,L | q2,V,L | — | — | q2,B,L |
+| q2 | q3,U,L | q3,V,L | — | — | — | — | — | — | — |
+| q3 | q3,a,L | q3,b,L | q0,X,R | q0,Y,R | — | — | — | — | — |
+| q4 | — | — | q4,X,L | q4,Y,L | — | — | — | — | q5,B,R |
+| q5 | — | — | q6,Z,R | q7,Z,R | — | — | — | qf,W,S | — |
+| q6 | — | — | q6,X,R | q6,Y,R | q8,W,L | — | — | q6,W,R | — |
+| q7 | — | — | q7,X,R | q7,Y,R | — | q8,W,L | — | q7,W,R | — |
+| q8 | — | — | q8,X,L | q8,Y,L | — | — | q5,Z,R | q8,W,L | — |
+
+**Algunas IDs de `abbabb`** (54 pasos):
+
+```
+ 0  [q0]abbabb      inicio
+ 7  Xbbab[q2]b      marcará la última b como V
+13  X[q0]bbabV      segunda ronda de la fase 1
+26  XY[q3]YUVV      la mitad quedó marcada: XYY | UVV
+31  [q4]BXYYUVV     rebobinado completo
+40  ZZ[q7]YWVV      lleva b para la tercera comparación
+54  ZZZ[qf]WWW      todo coincidió: aceptada
+```
+
+**Por qué funciona.** Sea n la longitud de la entrada.
+
+- *Invariante de la fase 1.* Tras k rondas, las celdas `0..k-1` son X/Y, las
+  últimas k son U/V y entre ellas solo hay a/b libres; cada marca conserva la
+  letra original (X/U = a, Y/V = b). Cada ronda marca un símbolo de cada
+  extremo. Si n es par, tras n/2 rondas `q0` lee U/V exactamente en la celda
+  n/2. Si n es impar, en la ronda (n+1)/2 `q0` marca el símbolo central y `q2`
+  ya no encuentra ninguno libre: lee X/Y, que no tiene transición, y rechaza.
+- *Invariante de la fase 3.* Con m = n/2, al entrar en `q5` por j-ésima vez la
+  cinta es Z^j (X|Y)^(m−j) W^j (U|V)^(m−j), con el cabezal en la celda j. La
+  ronda j+1 lleva la letra de la celda j (en el estado q6 o q7) hasta el
+  primer U/V, que está en la celda m+j. Si las letras coinciden la convierte
+  en W; si no, se detiene sin transición. Por eso `q5` lee W (con j = m) si y
+  solo si las letras de las posiciones i y m+i coinciden para todo i, es
+  decir, si la cadena es ww.
+- *Ninguna lectura inesperada.* `q6`/`q7` nunca leen B, porque quedan tantos
+  U/V como X/Y. `q8` nunca lee B, porque siempre hay al menos una Z a su
+  izquierda. `q4` nunca lee U/V, porque empieza a la izquierda de la mitad.
+
+**Terminación.** Cada ronda marca permanentemente una celda nueva o detiene
+la máquina, y cada recorrido avanza en un solo sentido dentro de las n celdas
+más un blanco. La fase 1 hace a lo sumo ⌈n/2⌉ rondas de a lo sumo 2n+4
+pasos, es decir, ≤ (n+2)²; la fase 2 hace ≤ n/2 + 2; la fase 3 hace n/2
+rondas de ≤ 2n+4 pasos, es decir, ≤ n(n+2). En total hay **menos de
+2(n+2)² pasos**: la máquina se detiene con toda entrada sobre {a, b}, en
+tiempo O(n²).
+
+**Casos del video** (las entradas de `inputs` del YAML):
+
+| Entrada | Longitud | Esperado | Pasos | Motivo |
+|---|---|---|---|---|
+| `abbabb` | 6 | ACEPTADA | 54 | w = `abb` |
+| `bbabbbab` | 8 | ACEPTADA | 87 | w = `bbab` |
+| `aabab` | 5 | RECHAZADA | 20 | longitud impar: `q2` lee `Y` (fase 1) |
+| `abaabb` | 6 | RECHAZADA | 49 | `aba` ≠ `abb`: `q6` lleva `a` y encuentra `V` en la 3.ª comparación |
+
+Las dos rechazadas usan solo símbolos válidos y fallan por estructura, en
+fases distintas. Además se eligieron cadenas que no son palíndromos, para
+que no se confunda L con el lenguaje de los palíndromos.
+
+**Verificación.** `tests/test_reconocedora.py` comprueba los casos del video
+(resultado, número exacto de pasos y reproducción paso a paso de la traza),
+la definición (10 estados, 34 transiciones, sin advertencias) y lo siguiente:
+
+- Las **2 047 cadenas de longitud 0 a 10** dan el mismo resultado que un
+  oráculo independiente (`tests/oraculos.py`), sin alcanzar el límite y sin
+  superar la cota de 2(n+2)² pasos.
+- 600 cadenas aleatorias de longitud 11 a 40 con semilla fija: ww, ww con
+  una letra cambiada en la segunda mitad y ww sin la última letra.
+
+Estas pruebas dan evidencia y complementan el argumento anterior, pero no lo
+sustituyen.
+
 ## Arquitectura
 
 ```
@@ -202,9 +319,10 @@ simulador_mt/
   presentacion.py  # Texto de la máquina, las IDs, la cinta y el resumen
   __main__.py      # CLI: argumentos, salida UTF-8 y archivo de traza
 maquinas/
-  ejemplo_enunciado.yaml
+  ejemplo_enunciado.yaml  reconocedora.yaml
 tests/
-  test_cargador.py  test_motor.py  test_presentacion.py
+  test_cargador.py  test_motor.py  test_presentacion.py  test_reconocedora.py
+  oraculos.py      # referencias independientes, solo para pruebas
 ```
 
 El flujo es YAML → `cargador` → `MaquinaTuring` → `motor.ejecutar` (una vez

@@ -1,0 +1,77 @@
+# MT reconocedora de L = { ww : w ∈ {a,b}* }  (cadenas formadas por una
+# palabra repetida dos veces, sin separador). L no es libre de contexto.
+#
+# Marcadores:
+#   X / Y  símbolo a / b de la primera mitad, aún sin comparar
+#   U / V  símbolo a / b de la segunda mitad, aún sin comparar
+#   Z      símbolo de la primera mitad ya comparado
+#   W      símbolo de la segunda mitad ya comparado
+#
+# Fase 1 (q0-q3) encontrar la mitad: marca alternadamente el símbolo libre
+#   más a la izquierda (X/Y) y el más a la derecha (U/V). Si al buscar el
+#   extremo derecho ya no queda ninguno libre, la longitud es impar: rechaza.
+# Fase 2 (q4) rebobinar hasta el inicio de la cinta.
+# Fase 3 (q5-q8) comparar: toma el primer X/Y, lo cambia por Z, recuerda en
+#   el estado si era a (q6) o b (q7) y busca el primer U/V. Si coincide lo
+#   cambia por W y regresa; si no, rechaza. Cuando ya no quedan X/Y, acepta.
+mt:
+  states: [q0, q1, q2, q3, q4, q5, q6, q7, q8, qf]
+  input_alphabet: [a, b]
+  tape_alphabet: [a, b, X, Y, U, V, Z, W, B]
+  blank: B
+  initial_state: q0
+  accept_states: [qf]
+  transitions:
+    # --- Fase 1: encontrar la mitad ---------------------------------------
+    # q0: en el símbolo libre más a la izquierda.
+    - {state: q0, read: a, write: X, move: R, next: q1}
+    - {state: q0, read: b, write: Y, move: R, next: q1}
+    - {state: q0, read: U, write: U, move: L, next: q4}   # mitad encontrada
+    - {state: q0, read: V, write: V, move: L, next: q4}   # mitad encontrada
+    - {state: q0, read: B, write: B, move: S, next: qf}   # cadena vacía: ε = εε
+    # q1: avanzar hasta pasar el último símbolo libre.
+    - {state: q1, read: a, write: a, move: R, next: q1}
+    - {state: q1, read: b, write: b, move: R, next: q1}
+    - {state: q1, read: U, write: U, move: L, next: q2}
+    - {state: q1, read: V, write: V, move: L, next: q2}
+    - {state: q1, read: B, write: B, move: L, next: q2}
+    # q2: marcar el símbolo libre más a la derecha. Si lee X/Y no queda
+    # ninguno libre: las marcas de ambos lados se encontraron con un símbolo
+    # sobrante, así que la longitud es impar y, sin transición, rechaza.
+    - {state: q2, read: a, write: U, move: L, next: q3}
+    - {state: q2, read: b, write: V, move: L, next: q3}
+    # q3: volver a la izquierda hasta la última marca X/Y.
+    - {state: q3, read: a, write: a, move: L, next: q3}
+    - {state: q3, read: b, write: b, move: L, next: q3}
+    - {state: q3, read: X, write: X, move: R, next: q0}
+    - {state: q3, read: Y, write: Y, move: R, next: q0}
+    # --- Fase 2: rebobinar ------------------------------------------------
+    - {state: q4, read: X, write: X, move: L, next: q4}
+    - {state: q4, read: Y, write: Y, move: L, next: q4}
+    - {state: q4, read: B, write: B, move: R, next: q5}
+    # --- Fase 3: comparar las mitades --------------------------------------
+    # q5: en el primer símbolo sin comparar de la primera mitad.
+    - {state: q5, read: X, write: Z, move: R, next: q6}   # recuerda a
+    - {state: q5, read: Y, write: Z, move: R, next: q7}   # recuerda b
+    # Lee W solo cuando toda la primera mitad ya es Z: todo coincidió.
+    - {state: q5, read: W, write: W, move: S, next: qf}
+    # q6: lleva a; busca el primer U/V. Si encuentra V, rechaza.
+    - {state: q6, read: X, write: X, move: R, next: q6}
+    - {state: q6, read: Y, write: Y, move: R, next: q6}
+    - {state: q6, read: W, write: W, move: R, next: q6}
+    - {state: q6, read: U, write: W, move: L, next: q8}
+    # q7: lleva b; busca el primer U/V. Si encuentra U, rechaza.
+    - {state: q7, read: X, write: X, move: R, next: q7}
+    - {state: q7, read: Y, write: Y, move: R, next: q7}
+    - {state: q7, read: W, write: W, move: R, next: q7}
+    - {state: q7, read: V, write: W, move: L, next: q8}
+    # q8: regresar hasta la última Z.
+    - {state: q8, read: W, write: W, move: L, next: q8}
+    - {state: q8, read: X, write: X, move: L, next: q8}
+    - {state: q8, read: Y, write: Y, move: L, next: q8}
+    - {state: q8, read: Z, write: Z, move: R, next: q5}
+  inputs:
+    - "abbabb"     # w = abb            → aceptada
+    - "bbabbbab"   # w = bbab           → aceptada
+    - "aabab"      # longitud impar     → rechazada en la fase 1
+    - "abaabb"     # aba ≠ abb          → rechazada en la fase 3 (3.ª comparación)

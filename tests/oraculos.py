@@ -13,6 +13,10 @@ def es_ww(cadena: str) -> bool:
     return resto == 0 and cadena[:mitad] == cadena[mitad:]
 
 
+def invertir(cadena: str) -> str:
+    return cadena[::-1]
+
+
 def todas_las_cadenas(alfabeto: str, longitud_maxima: int):
     """Todas las cadenas sobre el alfabeto, de longitud 0 a longitud_maxima."""
     for n in range(longitud_maxima + 1):

@@ -1,0 +1,71 @@
+# MT alteradora: invierte la cadena sobre las mismas celdas.
+#   f(w) = w^R para w ∈ {a,b}*. Al terminar, la cinta contiene exactamente
+#   w^R en las celdas 0..n-1 (sin marcadores) y el cabezal está en la celda 0.
+#
+# Marcadores:
+#   H      hueco: celda izquierda cuyo símbolo se está llevando a la derecha
+#   X / Y  a / b ya colocado en su posición final
+#
+# Fase 1 (q0-q6) intercambiar extremos: toma el símbolo libre más a la
+#   izquierda (deja H), lo lleva en el estado hasta el símbolo libre más a la
+#   derecha, escribe ahí su versión final (X/Y), recoge el símbolo que había y
+#   lo trae de vuelta al hueco. Si el hueco es el propio símbolo central
+#   (longitud impar), solo lo marca.
+# Fase 2 (q7-q8) limpiar: va al final y regresa cambiando X→a, Y→b.
+mt:
+  states: [q0, q1, q2, q3, q4, q5, q6, q7, q8, qf]
+  input_alphabet: [a, b]
+  tape_alphabet: [a, b, H, X, Y, B]
+  blank: B
+  initial_state: q0
+  accept_states: [qf]
+  transitions:
+    # --- Fase 1: intercambiar extremos ------------------------------------
+    # q0: en el símbolo libre más a la izquierda.
+    - {state: q0, read: a, write: H, move: R, next: q1}   # lleva a
+    - {state: q0, read: b, write: H, move: R, next: q2}   # lleva b
+    - {state: q0, read: X, write: X, move: R, next: q7}   # ya no hay libres
+    - {state: q0, read: Y, write: Y, move: R, next: q7}   # ya no hay libres
+    - {state: q0, read: B, write: B, move: S, next: qf}   # cadena vacía
+    # q1 / q2: llevan a / b hasta pasar el último símbolo libre.
+    - {state: q1, read: a, write: a, move: R, next: q1}
+    - {state: q1, read: b, write: b, move: R, next: q1}
+    - {state: q1, read: X, write: X, move: L, next: q3}
+    - {state: q1, read: Y, write: Y, move: L, next: q3}
+    - {state: q1, read: B, write: B, move: L, next: q3}
+    - {state: q2, read: a, write: a, move: R, next: q2}
+    - {state: q2, read: b, write: b, move: R, next: q2}
+    - {state: q2, read: X, write: X, move: L, next: q4}
+    - {state: q2, read: Y, write: Y, move: L, next: q4}
+    - {state: q2, read: B, write: B, move: L, next: q4}
+    # q3 / q4: en el símbolo libre más a la derecha, colocan a (X) / b (Y)
+    # y recogen el símbolo que había: a → q5, b → q6. Si leen H, el hueco
+    # es el símbolo central: lo colocan y se quedan (S) para que q0 lea la
+    # marca. Con R, una entrada de longitud 1 dejaría a q0 sobre el blanco.
+    - {state: q3, read: a, write: X, move: L, next: q5}
+    - {state: q3, read: b, write: X, move: L, next: q6}
+    - {state: q3, read: H, write: X, move: S, next: q0}
+    - {state: q4, read: a, write: Y, move: L, next: q5}
+    - {state: q4, read: b, write: Y, move: L, next: q6}
+    - {state: q4, read: H, write: Y, move: S, next: q0}
+    # q5 / q6: traen a / b de vuelta y lo colocan en el hueco.
+    - {state: q5, read: a, write: a, move: L, next: q5}
+    - {state: q5, read: b, write: b, move: L, next: q5}
+    - {state: q5, read: H, write: X, move: R, next: q0}
+    - {state: q6, read: a, write: a, move: L, next: q6}
+    - {state: q6, read: b, write: b, move: L, next: q6}
+    - {state: q6, read: H, write: Y, move: R, next: q0}
+    # --- Fase 2: limpiar marcadores ---------------------------------------
+    # q7: ir al final de la cadena.
+    - {state: q7, read: X, write: X, move: R, next: q7}
+    - {state: q7, read: Y, write: Y, move: R, next: q7}
+    - {state: q7, read: B, write: B, move: L, next: q8}
+    # q8: regresar restaurando las letras; termina con el cabezal en la celda 0.
+    - {state: q8, read: X, write: a, move: L, next: q8}
+    - {state: q8, read: Y, write: b, move: L, next: q8}
+    - {state: q8, read: B, write: B, move: R, next: qf}
+  inputs:
+    - "aabab"      # → babaa
+    - "abbbb"      # → bbbba
+    - "aaabbb"     # → bbbaaa
+    - "abbabaa"    # → aababba

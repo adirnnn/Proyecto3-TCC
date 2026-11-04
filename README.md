@@ -5,8 +5,9 @@ deterministas de **una sola cinta** descritas en un archivo YAML y muestra
 todas las descripciones instantáneas (IDs) de cada ejecución.
 
 > Estado: en desarrollo. Están listos la carga y validación del YAML, el
-> motor, las IDs, la interfaz de terminal y la MT reconocedora. La MT
-> alteradora se agrega en la siguiente parte.
+> motor, las IDs, la interfaz de terminal y las dos máquinas de
+> demostración (reconocedora y alteradora). Falta la revisión final de
+> documentación y la preparación del video.
 
 ## Requisitos e instalación
 
@@ -308,6 +309,132 @@ la definición (10 estados, 34 transiciones, sin advertencias) y lo siguiente:
 Estas pruebas dan evidencia y complementan el argumento anterior, pero no lo
 sustituyen.
 
+## MT alteradora: reversa sobre las mismas celdas
+
+Archivo: [`maquinas/alteradora.yaml`](maquinas/alteradora.yaml).
+
+```bash
+python -m simulador_mt maquinas/alteradora.yaml
+```
+
+**Transformación.** f(w) = wᴿ para w ∈ {a, b}*. Si la entrada w ocupa las
+celdas `0..n-1`, al terminar esas mismas celdas contienen wᴿ, el resto de la
+cinta queda en blanco, **no queda ningún marcador** y el cabezal está en la
+celda 0. Por ejemplo, `aabab` → `babaa`. La máquina termina en `qf` con toda
+entrada válida; en esta MT, "ACEPTADA" significa que la transformación
+terminó.
+
+A diferencia de la reversa típica, que escribe una copia invertida después
+de un separador, esta máquina **intercambia los extremos sobre la propia
+cadena**. Para hacerlo lleva un símbolo en el estado en cada sentido, resuelve
+el símbolo central cuando la longitud es impar y, al final, restaura las
+letras originales.
+
+**Definición formal.** M = (Q, Σ, Γ, δ, q0, B, F) con
+Q = {q0, …, q8, qf}, Σ = {a, b}, Γ = {a, b, H, X, Y, B} y F = {qf}.
+
+| Marcador | Significado |
+|---|---|
+| `H` | hueco: celda izquierda cuyo símbolo se está llevando a la derecha |
+| `X` / `Y` | `a` / `b` ya colocado en su posición final |
+
+**Fases y estados.**
+
+| Fase | Estado | Papel |
+|---|---|---|
+| 1. Intercambiar extremos | `q0` | En el símbolo libre más a la izquierda: lo cambia por H y lo lleva a la derecha (`a` → q1, `b` → q2). Si lee X/Y, ya no quedan libres y pasa a limpiar. Si lee B, la entrada es ε. |
+| | `q1` / `q2` | Llevan `a` / `b` a la derecha sobre a/b hasta X, Y o B, y retroceden una celda. |
+| | `q3` / `q4` | En el símbolo libre más a la derecha: escriben X / Y (el símbolo llevado, ya en su lugar final) y recogen el que había (`a` → q5, `b` → q6). Si leen H, el hueco es el símbolo central: lo marcan y se quedan (`S`). |
+| | `q5` / `q6` | Traen `a` / `b` a la izquierda hasta H, escriben X / Y y vuelven a q0. |
+| 2. Limpiar | `q7` | Va a la derecha sobre X/Y hasta el blanco. |
+| | `q8` | Regresa cambiando X → a, Y → b y termina en `qf` con el cabezal en la celda 0. |
+
+**Transiciones** (celda = `siguiente, escribe, mueve`; `—` = no definida;
+`qf` no tiene transiciones):
+
+| δ | a | b | H | X | Y | B |
+|---|---|---|---|---|---|---|
+| q0 | q1,H,R | q2,H,R | — | q7,X,R | q7,Y,R | qf,B,S |
+| q1 | q1,a,R | q1,b,R | — | q3,X,L | q3,Y,L | q3,B,L |
+| q2 | q2,a,R | q2,b,R | — | q4,X,L | q4,Y,L | q4,B,L |
+| q3 | q5,X,L | q6,X,L | q0,X,S | — | — | — |
+| q4 | q5,Y,L | q6,Y,L | q0,Y,S | — | — | — |
+| q5 | q5,a,L | q5,b,L | q0,X,R | — | — | — |
+| q6 | q6,a,L | q6,b,L | q0,Y,R | — | — | — |
+| q7 | — | — | — | q7,X,R | q7,Y,R | q8,B,L |
+| q8 | — | — | — | q8,a,L | q8,b,L | qf,B,R |
+
+**IDs seleccionadas de `aabab` → `babaa`** (31 pasos):
+
+```
+ 0  [q0]aabab       inicio
+ 1  H[q1]abab       toma la primera a y deja el hueco H
+ 6  Haba[q3]b       extremo derecho: escribirá X (la a llevada) y recoge b
+10  [q6]HabaX       trae la b hasta el hueco
+11  Y[q0]abaX       primer intercambio hecho: a…b → Y…X
+18  YX[q0]bXX       segundo intercambio hecho
+20  YX[q4]HXX       el hueco es el símbolo central (longitud impar)
+21  YX[q0]YXX       todo colocado; empieza la limpieza
+24  YXYXX[q7]B      llegó al final
+30  [q8]Bbabaa      letras restauradas
+31  [qf]babaa       resultado: babaa, cabezal en la celda 0
+```
+
+**Por qué funciona.** Sea w = w₀…wₙ₋₁ y sea m(c) la marca final de la letra
+c (m(a) = X, m(b) = Y).
+
+- *Invariante de la fase 1.* Al entrar en `q0` tras k intercambios, la cinta
+  es m(wₙ₋₁)…m(wₙ₋ₖ) · wₖ…wₙ₋ₖ₋₁ · m(wₖ₋₁)…m(w₀), con el cabezal en la
+  celda k. Es decir, las k primeras y las k últimas celdas ya contienen
+  (marcadas) las letras correctas de wᴿ, y el centro sigue intacto.
+- *Un intercambio.* Desde `q0` en la celda k con wₖ = c, la máquina escribe H y
+  lleva c (q1/q2) hasta la celda n−k−1, la última libre. Ahí escribe m(c),
+  recoge d = wₙ₋ₖ₋₁ (q5/q6), vuelve hasta H y escribe m(d). Entre H y el
+  extremo derecho solo hay letras libres, así que los recorridos se detienen
+  en el lugar correcto. El invariante se cumple para k+1.
+- *Centro.* Si n es impar, cuando k = (n−1)/2 el único símbolo libre es el
+  central. `q1`/`q2` encuentran la marca de la celda siguiente, retroceden al
+  propio hueco, y `q3`/`q4` leen H y escriben la marca de esa misma letra,
+  que en wᴿ queda en el mismo lugar. El movimiento `S` deja a `q0` sobre esa
+  marca. Si fuera `R`, con n = 1 `q0` caería en el blanco y la máquina
+  terminaría sin limpiar (un mutante que lo hace es detectado por las
+  pruebas).
+- *Fin de la fase 1 y limpieza.* `q0` lee X/Y exactamente cuando no quedan
+  letras libres; en ese momento toda la cadena es m(wᴿ). `q7` va al último
+  marcador y `q8` cambia cada marcador por su letra hasta el blanco de la
+  celda −1, y luego avanza a la celda 0. El resultado es wᴿ sin residuos.
+
+**Terminación.** Cada ronda de la fase 1 fija permanentemente dos celdas
+(una en la ronda del centro) y, sobre una región libre de m celdas, tarda
+exactamente 2m + 1 pasos. Hay ⌈n/2⌉ rondas. La limpieza recorre la cadena una
+vez en cada sentido. Para n ≥ 1 el número de pasos depende solo de n:
+**(n² + 6n + 4)/2 si n es par y (n² + 6n + 7)/2 si n es impar**. Con la
+cadena vacía hace 1 paso. Esto es O(n²) y siempre es menor o igual que
+(n+2)² + 1, así que la máquina se detiene con toda entrada sobre {a, b}.
+
+**Casos del video** (las entradas de `inputs` del YAML):
+
+| Entrada | Longitud | Salida esperada | Pasos |
+|---|---|---|---|
+| `aabab` | 5 | `babaa` | 31 |
+| `abbbb` | 5 | `bbbba` | 31 |
+| `aaabbb` | 6 | `bbbaaa` | 38 |
+| `abbabaa` | 7 | `aababba` | 49 |
+
+Ninguna es un palíndromo, así que un error que dejara la cadena sin cambios
+sería visible. Hay longitudes pares e impares. La salida nunca es una cinta
+en blanco.
+
+**Verificación.** `tests/test_alteradora.py` comprueba los casos del video
+(salida, número exacto de pasos y reproducción de la traza) y lo siguiente:
+
+- Las **2 047 cadenas de longitud 0 a 10** terminan con exactamente su
+  reversa (`tests/oraculos.py`) en las celdas `0..n-1`, nada más escrito en
+  la cinta, el cabezal en 0 y exactamente el número de pasos de la fórmula.
+- 100 cadenas aleatorias de longitud 11 a 40 con semilla fija.
+- Las 33 transiciones se ejecutan al menos una vez, y los marcadores H, X e
+  Y aparecen durante la ejecución pero no al final.
+
 ## Arquitectura
 
 ```
@@ -319,9 +446,10 @@ simulador_mt/
   presentacion.py  # Texto de la máquina, las IDs, la cinta y el resumen
   __main__.py      # CLI: argumentos, salida UTF-8 y archivo de traza
 maquinas/
-  ejemplo_enunciado.yaml  reconocedora.yaml
+  ejemplo_enunciado.yaml  reconocedora.yaml  alteradora.yaml
 tests/
-  test_cargador.py  test_motor.py  test_presentacion.py  test_reconocedora.py
+  test_cargador.py  test_motor.py  test_presentacion.py
+  test_reconocedora.py  test_alteradora.py
   oraculos.py      # referencias independientes, solo para pruebas
 ```
 

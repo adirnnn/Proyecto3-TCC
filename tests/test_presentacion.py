@@ -11,7 +11,7 @@ from simulador_mt.motor import Configuracion, ejecutar
 from simulador_mt.presentacion import (formatear_cinta, formatear_ejecucion, formatear_id,
                                        formatear_resumen)
 
-from tests.test_motor import BUCLE, DERECHA, IZQUIERDA, RAIZ
+from tests.test_motor import BUCLE, DERECHA, IZQUIERDA, RAIZ, maquina
 
 EJEMPLO = str(RAIZ / "maquinas" / "ejemplo_enunciado.yaml")
 
@@ -63,6 +63,19 @@ class PruebasSalida(unittest.TestCase):
         self.assertIn("ID final: [qf]ZYa", texto)
         self.assertIn("Resultado: ACEPTADA", texto)
         self.assertIn("Pasos: 3", texto)
+
+    def test_columna_de_la_regla_alineada_con_cabezal_negativo(self):
+        # El cabezal pasa por -1 y vuelve a 0: anchos distintos en la traza.
+        ida_y_vuelta = maquina("""\
+            - {state: q0, read: a, write: a, move: L, next: q1}
+            - {state: q1, read: B, write: B, move: R, next: q2}
+            - {state: q2, read: a, write: a, move: S, next: qf}
+            """)
+        r = ejecutar(ida_y_vuelta, "a")
+        self.assertEqual([c.cabezal for c in r.configuraciones], [0, -1, 0, 0])
+        texto = formatear_ejecucion(ida_y_vuelta, r, 1, 1)
+        columnas = {linea.index(" por #") for linea in texto.splitlines() if " por #" in linea}
+        self.assertEqual(len(columnas), 1, texto)
 
     def test_traza_larga_no_se_trunca(self):
         r = ejecutar(BUCLE, "a", max_pasos=500)

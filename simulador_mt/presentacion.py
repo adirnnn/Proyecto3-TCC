@@ -93,12 +93,16 @@ def _traza(resultado: Resultado) -> list[str]:
     ids = [formatear_id(c) for c in resultado.configuraciones]
     ancho_id = max(len(i) for i in ids)
     ancho_paso = len(str(resultado.pasos))
+    # El cabezal puede ser negativo o de varias cifras; se rellena para que
+    # la columna de la regla aplicada quede alineada en toda la traza.
+    ancho_cabezal = max(len(str(c.cabezal)) for c in resultado.configuraciones)
     lineas = ["Descripciones instantáneas (cabezal = posición de la celda leída):"]
     for config, texto in zip(resultado.configuraciones, ids):
         flecha = "⊢" if config.transicion else " "
         regla = f"   por #{config.transicion.indice}: {config.transicion}" if config.transicion else ""
+        cabezal = f"{config.cabezal:<{ancho_cabezal}}" if regla else str(config.cabezal)
         lineas.append(f"  {config.paso:>{ancho_paso}} {flecha} {texto:<{ancho_id}}"
-                      f"   cabezal={config.cabezal}{regla}")
+                      f"   cabezal={cabezal}{regla}")
     return lineas
 
 

@@ -4,15 +4,18 @@ Proyecto 3 de Teoría de la Computación. Simula Máquinas de Turing (MT)
 deterministas de **una sola cinta** descritas en un archivo YAML y muestra
 todas las descripciones instantáneas (IDs) de cada ejecución.
 
-> Estado: en desarrollo. Están listos la carga y validación del YAML, el
-> motor, las IDs, la interfaz de terminal y las dos máquinas de
-> demostración (reconocedora y alteradora). Falta la revisión final de
-> documentación y la preparación del video.
+Incluye la carga y validación del YAML, el motor, las IDs, la interfaz de
+terminal y dos máquinas de demostración: una **reconocedora** de
+L = { ww : w ∈ {a,b}* } y una **alteradora** que invierte la cadena sobre
+las mismas celdas.
 
 ## Requisitos e instalación
 
 - Python 3.10 o superior.
 - [PyYAML](https://pypi.org/project/PyYAML/) 6.x (única dependencia).
+
+Todos los comandos de este documento se ejecutan desde la **raíz del
+repositorio** (la carpeta que contiene este README).
 
 ```bash
 python -m venv .venv
@@ -20,6 +23,11 @@ python -m venv .venv
 # Linux / macOS:        source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
+
+Si PowerShell no permite ejecutar `Activate.ps1` ("la ejecución de scripts
+está deshabilitada"), habilítelo solo para la ventana actual con
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` y vuelva a
+activar el entorno.
 
 ## Uso
 
@@ -65,12 +73,20 @@ Pasos: 1
 python -m unittest -v
 ```
 
-Las pruebas usan solo `unittest` de la biblioteca estándar. Cubren la
-validación del YAML, la cinta, cada tipo de terminación, la frontera del
-límite de pasos, el aislamiento entre ejecuciones, la inmutabilidad de las
-configuraciones, el formato de las IDs y la CLI. Además, cada traza probada
-se **reproduce paso a paso**: desde cada configuración y la regla registrada
-se recalcula la siguiente y se compara celda por celda.
+Debe terminar con `Ran 85 tests ... OK` (unos segundos). Las pruebas usan
+solo `unittest` de la biblioteca estándar:
+
+| Archivo | Pruebas | Qué cubre |
+|---|---|---|
+| `test_cargador.py` | 38 | Validación del YAML: claves, tipos, alfabetos, estados, determinismo, formato con memoria, lectura de escalares como texto, entradas inválidas. |
+| `test_motor.py` | 17 | Cinta infinita en ambos sentidos, cada tipo de terminación, frontera del límite de pasos, aislamiento entre ejecuciones e inmutabilidad de las configuraciones. |
+| `test_presentacion.py` | 16 | Notación de las IDs, alineación de la traza y de la cinta, resumen y CLI (archivo de traza y códigos de salida). |
+| `test_reconocedora.py` | 6 | MT de ww: casos del video y comparación exhaustiva y aleatoria con un oráculo. |
+| `test_alteradora.py` | 8 | MT de reversa: casos del video, comparación exhaustiva y aleatoria, uso de todas las transiciones. |
+
+Además, cada traza probada se **reproduce paso a paso**: desde cada
+configuración y la regla registrada se recalcula la siguiente y se compara
+celda por celda.
 
 ## Formato del archivo YAML
 

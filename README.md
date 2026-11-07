@@ -6,8 +6,8 @@ todas las descripciones instantáneas (IDs) de cada ejecución.
 
 Incluye la carga y validación del YAML, el motor, las IDs, la interfaz de
 terminal y dos máquinas de demostración: una **reconocedora** de
-L = { ww : w ∈ {a,b}* } y una **alteradora** que invierte la cadena sobre
-las mismas celdas.
+L = { ww : w ∈ {a,b}* } y una **alteradora** que suma dos números binarios
+`x+y` y deja solo el resultado en la cinta.
 
 ## Requisitos e instalación
 
@@ -73,7 +73,7 @@ Pasos: 1
 python -m unittest -v
 ```
 
-Debe terminar con `Ran 85 tests ... OK` (unos segundos). Las pruebas usan
+Debe terminar con `Ran 88 tests ... OK` (unos segundos). Las pruebas usan
 solo `unittest` de la biblioteca estándar:
 
 | Archivo | Pruebas | Qué cubre |
@@ -82,7 +82,7 @@ solo `unittest` de la biblioteca estándar:
 | `test_motor.py` | 17 | Cinta infinita en ambos sentidos, cada tipo de terminación, frontera del límite de pasos, aislamiento entre ejecuciones e inmutabilidad de las configuraciones. |
 | `test_presentacion.py` | 16 | Notación de las IDs, alineación de la traza y de la cinta, resumen y CLI (archivo de traza y códigos de salida). |
 | `test_reconocedora.py` | 6 | MT de ww: casos del video y comparación exhaustiva y aleatoria con un oráculo. |
-| `test_alteradora.py` | 8 | MT de reversa: casos del video, comparación exhaustiva y aleatoria, uso de todas las transiciones. |
+| `test_alteradora.py` | 11 | MT de suma binaria: casos del video, casos particulares, comparación exhaustiva y aleatoria (resultado y pasos exactos), entradas mal formadas, uso de todas las transiciones. |
 
 Además, cada traza probada se **reproduce paso a paso**: desde cada
 configuración y la regla registrada se recalcula la siguiente y se compara
@@ -325,7 +325,7 @@ la definición (10 estados, 34 transiciones, sin advertencias) y lo siguiente:
 Estas pruebas dan evidencia y complementan el argumento anterior, pero no lo
 sustituyen.
 
-## MT alteradora: reversa sobre las mismas celdas
+## MT alteradora: suma binaria x+y
 
 Archivo: [`maquinas/alteradora.yaml`](maquinas/alteradora.yaml).
 
@@ -333,123 +333,176 @@ Archivo: [`maquinas/alteradora.yaml`](maquinas/alteradora.yaml).
 python -m simulador_mt maquinas/alteradora.yaml
 ```
 
-**Transformación.** f(w) = wᴿ para w ∈ {a, b}*. Si la entrada w ocupa las
-celdas `0..n-1`, al terminar esas mismas celdas contienen wᴿ, el resto de la
-cinta queda en blanco, **no queda ningún marcador** y el cabezal está en la
-celda 0. Por ejemplo, `aabab` → `babaa`. La máquina termina en `qf` con toda
-entrada válida; en esta MT, "ACEPTADA" significa que la transformación
-terminó.
+**Transformación.** La entrada es `x+y`, con x, y ∈ {0,1}⁺ escritos en
+binario (el bit más significativo a la izquierda). Al terminar, la cinta
+contiene **solo la suma x + y en binario**: sin `+`, sin restos de y y sin
+marcadores. Por ejemplo, `1011+110` (11 + 6) → `10001` (17). El cabezal queda
+sobre el primer símbolo del resultado, que termina en la celda |x|−1 y puede
+empezar en celdas negativas, porque la suma puede ser más larga que x.
 
-A diferencia de la reversa típica, que escribe una copia invertida después
-de un separador, esta máquina **intercambia los extremos sobre la propia
-cadena**. Para hacerlo lleva un símbolo en el estado en cada sentido, resuelve
-el símbolo central cuando la longitud es impar y, al final, restaura las
-letras originales.
+- El resultado tiene el ancho del operando más largo, o una cifra más si
+  queda un acarreo final. Si los operandos no tienen ceros a la izquierda,
+  la suma tampoco: `111+1` → `1000`. Si los tienen, se conserva el ancho:
+  `1+0010` → `0011`. Se admite el operando `0` (`0+0` → `0`).
+- Una entrada que no tiene la forma x+y (`+1`, `1+`, `1++1`, `11`, la
+  cadena vacía) se detiene **sin aceptar** en la fase de validación, sin
+  modificar la cinta.
+- En esta MT, "ACEPTADA" significa que la suma terminó.
+
+**Por qué es más que el ejemplo del enunciado.** La máquina valida la forma
+de la entrada, recorre los bits de y del menos al más significativo, propaga
+acarreos en cadena, maneja operandos de distinta longitud, extiende la cinta
+hacia la izquierda (posiciones negativas) cuando la suma crece y, al final,
+borra el operando y y todos los marcadores. Tiene 13 estados y 43
+transiciones, frente a las 33 de una reversa in situ.
 
 **Definición formal.** M = (Q, Σ, Γ, δ, q0, B, F) con
-Q = {q0, …, q8, qf}, Σ = {a, b}, Γ = {a, b, H, X, Y, B} y F = {qf}.
+Q = {q0, …, q11, qf}, Σ = {0, 1, +}, Γ = {0, 1, +, C, U, B} y F = {qf}.
 
 | Marcador | Significado |
 |---|---|
-| `H` | hueco: celda izquierda cuyo símbolo se está llevando a la derecha |
-| `X` / `Y` | `a` / `b` ya colocado en su posición final |
+| `C` / `U` | bit `0` / `1` definitivo del resultado (columna ya sumada); puede estar a la izquierda de x si y es más largo |
+
+Se usan `C` (cero) y `U` (uno) en lugar de `O` e `I` para que no se
+confundan con `0` y `1` en la traza.
 
 **Fases y estados.**
 
 | Fase | Estado | Papel |
 |---|---|---|
-| 1. Intercambiar extremos | `q0` | En el símbolo libre más a la izquierda: lo cambia por H y lo lleva a la derecha (`a` → q1, `b` → q2). Si lee X/Y, ya no quedan libres y pasa a limpiar. Si lee B, la entrada es ε. |
-| | `q1` / `q2` | Llevan `a` / `b` a la derecha sobre a/b hasta X, Y o B, y retroceden una celda. |
-| | `q3` / `q4` | En el símbolo libre más a la derecha: escriben X / Y (el símbolo llevado, ya en su lugar final) y recogen el que había (`a` → q5, `b` → q6). Si leen H, el hueco es el símbolo central: lo marcan y se quedan (`S`). |
-| | `q5` / `q6` | Traen `a` / `b` a la izquierda hasta H, escriben X / Y y vuelven a q0. |
-| 2. Limpiar | `q7` | Va a la derecha sobre X/Y hasta el blanco. |
-| | `q8` | Regresa cambiando X → a, Y → b y termina en `qf` con el cabezal en la celda 0. |
+| 1. Validar | `q0` | x debe empezar con un bit. |
+| | `q1` | Recorre x hasta el `+`. |
+| | `q2` | y debe empezar con un bit. |
+| | `q3` | Recorre y hasta el blanco; un segundo `+` no tiene transición. |
+| 2. Sumar | `q4` | En el extremo derecho: borra el último bit de y y lo lleva en el estado (`0` → q5, `1` → q6). Si lee `+`, y ya se acabó y pasa a limpiar. |
+| | `q5` / `q6` | Llevan 0 / 1 a la izquierda sobre lo que queda de y hasta pasar el `+`. |
+| | `q7` | Suma 0: pasa las posiciones ya sumadas (C/U) y marca la primera sin marcar. Si x se acabó (B), escribe una posición nueva. |
+| | `q8` | Suma 1: igual que q7, pero 1 + 1 escribe `C` y genera acarreo. |
+| | `q11` | Propaga el acarreo a la izquierda: `1` → `0` y sigue; `0` o B → `1` y termina. |
+| | `q9` | Regresa al extremo derecho para tomar el siguiente bit de y. |
+| 3. Limpiar | `q10` | Borra el `+` (lo hace q4) y regresa cambiando C → 0, U → 1 hasta el blanco; termina en `qf` sobre el primer símbolo. |
 
-**Transiciones** (celda = `siguiente, escribe, mueve`; `—` = no definida;
-`qf` no tiene transiciones):
+**Transiciones** (celda = `siguiente, escribe, mueve`; `—` = no definida,
+la máquina se detiene; `qf` no tiene transiciones):
 
-| δ | a | b | H | X | Y | B |
+| δ | 0 | 1 | + | C | U | B |
 |---|---|---|---|---|---|---|
-| q0 | q1,H,R | q2,H,R | — | q7,X,R | q7,Y,R | qf,B,S |
-| q1 | q1,a,R | q1,b,R | — | q3,X,L | q3,Y,L | q3,B,L |
-| q2 | q2,a,R | q2,b,R | — | q4,X,L | q4,Y,L | q4,B,L |
-| q3 | q5,X,L | q6,X,L | q0,X,S | — | — | — |
-| q4 | q5,Y,L | q6,Y,L | q0,Y,S | — | — | — |
-| q5 | q5,a,L | q5,b,L | q0,X,R | — | — | — |
-| q6 | q6,a,L | q6,b,L | q0,Y,R | — | — | — |
-| q7 | — | — | — | q7,X,R | q7,Y,R | q8,B,L |
-| q8 | — | — | — | q8,a,L | q8,b,L | qf,B,R |
+| q0 | q1,0,R | q1,1,R | — | — | — | — |
+| q1 | q1,0,R | q1,1,R | q2,+,R | — | — | — |
+| q2 | q3,0,R | q3,1,R | — | — | — | — |
+| q3 | q3,0,R | q3,1,R | — | — | — | q4,B,L |
+| q4 | q5,B,L | q6,B,L | q10,B,L | — | — | — |
+| q5 | q5,0,L | q5,1,L | q7,+,L | — | — | — |
+| q6 | q6,0,L | q6,1,L | q8,+,L | — | — | — |
+| q7 | q9,C,R | q9,U,R | — | q7,C,L | q7,U,L | q9,C,R |
+| q8 | q9,U,R | q11,C,L | — | q8,C,L | q8,U,L | q9,U,R |
+| q9 | q9,0,R | q9,1,R | q9,+,R | q9,C,R | q9,U,R | q4,B,L |
+| q10 | q10,0,L | q10,1,L | — | q10,0,L | q10,1,L | qf,B,R |
+| q11 | q9,1,R | q11,0,L | — | — | — | q9,1,R |
 
-**IDs seleccionadas de `aabab` → `babaa`** (31 pasos):
+**IDs seleccionadas de `1011+110` → `10001`** (49 pasos):
 
 ```
- 0  [q0]aabab       inicio
- 1  H[q1]abab       toma la primera a y deja el hueco H
- 6  Haba[q3]b       extremo derecho: escribirá X (la a llevada) y recoge b
-10  [q6]HabaX       trae la b hasta el hueco
-11  Y[q0]abaX       primer intercambio hecho: a…b → Y…X
-18  YX[q0]bXX       segundo intercambio hecho
-20  YX[q4]HXX       el hueco es el símbolo central (longitud impar)
-21  YX[q0]YXX       todo colocado; empieza la limpieza
-24  YXYXX[q7]B      llegó al final
-30  [q8]Bbabaa      letras restauradas
-31  [qf]babaa       resultado: babaa, cabezal en la celda 0
+ 0  [q0]1011+110    inicio
+ 9  1011+11[q4]0    validada; toma el último bit de y (0)
+13  101[q7]1+11     lleva 0 hasta la posición 2⁰ de x
+14  101U[q9]+11     1 + 0 = 1, sin acarreo: marca U
+23  1[q11]0CU+1     posición 2¹: 1 + 1 = 0 (C), lleva acarreo
+24  11[q9]CU+1      el acarreo convierte el 0 de 2² en 1
+34  [q11]1CCU+      posición 2²: 1 + 1 = 0 (C), otro acarreo
+36  1[q9]0CCU+      el acarreo cruza el 1 de 2³ y crea la celda −1
+43  10CC[q10]U      y se acabó: borró el + y empieza a limpiar
+49  [qf]10001       resultado 10001 en las celdas −1..3
 ```
 
-**Por qué funciona.** Sea w = w₀…wₙ₋₁ y sea m(c) la marca final de la letra
-c (m(a) = X, m(b) = Y).
+**Por qué funciona.** Sean a = |x|, b = |y|, n = a + b + 1, y sea
+y = y_{b−1}…y₁y₀ (y₀ el bit menos significativo). La posición de peso 2ʲ de
+la suma es la celda a−1−j; para j ≥ a está a la izquierda de la entrada.
 
-- *Invariante de la fase 1.* Al entrar en `q0` tras k intercambios, la cinta
-  es m(wₙ₋₁)…m(wₙ₋ₖ) · wₖ…wₙ₋ₖ₋₁ · m(wₖ₋₁)…m(w₀), con el cabezal en la
-  celda k. Es decir, las k primeras y las k últimas celdas ya contienen
-  (marcadas) las letras correctas de wᴿ, y el centro sigue intacto.
-- *Un intercambio.* Desde `q0` en la celda k con wₖ = c, la máquina escribe H y
-  lleva c (q1/q2) hasta la celda n−k−1, la última libre. Ahí escribe m(c),
-  recoge d = wₙ₋ₖ₋₁ (q5/q6), vuelve hasta H y escribe m(d). Entre H y el
-  extremo derecho solo hay letras libres, así que los recorridos se detienen
-  en el lugar correcto. El invariante se cumple para k+1.
-- *Centro.* Si n es impar, cuando k = (n−1)/2 el único símbolo libre es el
-  central. `q1`/`q2` encuentran la marca de la celda siguiente, retroceden al
-  propio hueco, y `q3`/`q4` leen H y escriben la marca de esa misma letra,
-  que en wᴿ queda en el mismo lugar. El movimiento `S` deja a `q0` sobre esa
-  marca. Si fuera `R`, con n = 1 `q0` caería en el blanco y la máquina
-  terminaría sin limpiar (un mutante que lo hace es detectado por las
-  pruebas).
-- *Fin de la fase 1 y limpieza.* `q0` lee X/Y exactamente cuando no quedan
-  letras libres; en ese momento toda la cadena es m(wᴿ). `q7` va al último
-  marcador y `q8` cambia cada marcador por su letra hasta el blanco de la
-  celda −1, y luego avanza a la celda 0. El resultado es wᴿ sin residuos.
+- *Validación.* q0–q3 aceptan exactamente las cadenas de la forma
+  `{0,1}⁺ + {0,1}⁺`, de izquierda a derecha y sin escribir nada distinto. Con
+  cualquier otra cadena se detienen sin transición en esa misma pasada.
+- *Invariante de la fase 2.* Al entrar en `q4` por (k+1)-ésima vez
+  (k = 0, …, b), con el cabezal en el último símbolo no blanco:
+  1. las celdas a+1 … a+b−k contienen y_{b−1}…y_k, el `+` sigue en la
+     celda a y los k bits menores de y ya se borraron;
+  2. a la izquierda del `+` hay una palabra sin blancos interiores, formada
+     por bits sin marcar seguidos de exactamente k marcas C/U (las posiciones
+     2⁰ … 2^{k−1});
+  3. leída como número (C = 0, U = 1), esa palabra vale x + (y mod 2ᵏ).
+- *Una ronda.* q4 borra y_k. q5/q6 cruzan lo que queda de y y el `+`, y
+  q7/q8 cruzan las k marcas, así que se detienen justo en la posición 2ᵏ.
+  Si es B, x ya no tiene esa cifra y vale 0. Sumar y_k ahí y marcarla deja
+  k+1 marcas. Si 1 + 1, se escribe C y se suma 2ᵏ⁺¹ incrementando la parte
+  sin marcar (q11): los `1` finales pasan a `0` y el primer `0` o B pasa a
+  `1`. Como todo lo que está a la izquierda de la posición 2ᵏ está sin
+  marcar, el acarreo nunca toca una marca. El valor aumenta exactamente
+  y_k·2ᵏ, y q9 vuelve al último símbolo no blanco: el invariante se cumple
+  para k+1.
+- *Limpieza.* Con k = b, q4 lee el `+`, lo borra y q10 cambia cada marca por
+  su bit hasta el blanco; luego avanza una celda. La cinta contiene
+  x + y y nada más.
+- *Ancho.* Se escriben celdas a la izquierda de x solo para una posición 2ʲ
+  con j < b (q7/q8 leen B) o para un acarreo que la suma realmente necesita.
+  Por eso el ancho es max(a, b), o uno más si la suma no cabe.
+- *Ninguna lectura inesperada.* q5/q6 solo encuentran bits de y y el `+`;
+  q7/q8, marcas, bits sin marcar o B; q11, solo bits sin marcar o B; q9 nunca
+  lee un `1` sin marcar dentro de x (a la derecha de lo que acaba de escribir
+  hay una marca, un `0` dejado por el acarreo o el `+`).
 
-**Terminación.** Cada ronda de la fase 1 fija permanentemente dos celdas
-(una en la ronda del centro) y, sobre una región libre de m celdas, tarda
-exactamente 2m + 1 pasos. Hay ⌈n/2⌉ rondas. La limpieza recorre la cadena una
-vez en cada sentido. Para n ≥ 1 el número de pasos depende solo de n:
-**(n² + 6n + 4)/2 si n es par y (n² + 6n + 7)/2 si n es impar**. Con la
-cadena vacía hace 1 paso. Esto es O(n²) y siempre es menor o igual que
-(n+2)² + 1, así que la máquina se detiene con toda entrada sobre {a, b}.
+**Terminación.** La validación hace n + 1 pasos. La ronda k hace
+2b + 3 + 2jₖ pasos, donde jₖ es lo que avanza su acarreo (0 si no hay). La
+limpieza hace w + 2, con w el ancho del resultado. En total:
+
+**pasos = n + 3 + b(2b + 3) + 2J + w**, con J = Σ jₖ.
+
+Cada acarreo convierte jₖ − 1 unos sin marcar en ceros y crea a lo sumo uno
+nuevo, así que J ≤ a + 2b. De ahí sale que **pasos ≤ 2n² + n**: la máquina se
+detiene con toda entrada sobre {0, 1, +}, en tiempo O(n²). Las entradas mal
+formadas se detienen en a lo sumo n pasos. Por ejemplo, en `1011+110` hay
+acarreos de 1 y 2 celdas (J = 3) y w = 5: 8 + 3 + 27 + 6 + 5 = 49 pasos. El
+peor caso medido es `1+11…1`, con 2n² − n pasos.
+
+Como el límite por defecto es de 10 000 pasos, una suma de unas 71 cifras o
+más puede terminar como LÍMITE ALCANZADO aunque la máquina sí se detendría.
+Por ejemplo, `1+` seguido de 69 unos necesita 10 011 pasos; en ese caso hay
+que usar, por ejemplo, `--max-pasos 20000`.
 
 **Casos del video** (las entradas de `inputs` del YAML):
 
-| Entrada | Longitud | Salida esperada | Pasos |
-|---|---|---|---|
-| `aabab` | 5 | `babaa` | 31 |
-| `abbbb` | 5 | `bbbba` | 31 |
-| `aaabbb` | 6 | `bbbaaa` | 38 |
-| `abbabaa` | 7 | `aababba` | 49 |
+| Entrada | Longitud | Salida esperada | Pasos | Qué muestra |
+|---|---|---|---|---|
+| `1011+110` | 8 | `10001` | 49 | acarreos encadenados, operandos de distinta longitud |
+| `111+1` | 5 | `1000` | 23 | un acarreo recorre todo x y crea una celda a la izquierda |
+| `1+1111` | 6 | `10000` | 66 | x más corto que y: la cinta crece hasta la celda −4 |
+| `1001+1001` | 9 | `10010` | 65 | operandos de igual longitud |
 
-Ninguna es un palíndromo, así que un error que dejara la cadena sin cambios
-sería visible. Hay longitudes pares e impares. La salida nunca es una cinta
+En todos los casos la salida es distinta de la entrada y nunca es una cinta
 en blanco.
 
 **Verificación.** `tests/test_alteradora.py` comprueba los casos del video
 (salida, número exacto de pasos y reproducción de la traza) y lo siguiente:
 
-- Las **2 047 cadenas de longitud 0 a 10** terminan con exactamente su
-  reversa (`tests/oraculos.py`) en las celdas `0..n-1`, nada más escrito en
-  la cinta, el cabezal en 0 y exactamente el número de pasos de la fórmula.
-- 100 cadenas aleatorias de longitud 11 a 40 con semilla fija.
-- Las 33 transiciones se ejecutan al menos una vez, y los marcadores H, X e
-  Y aparecen durante la ejecución pero no al final.
+- Las **29 524 cadenas sobre {0, 1, +} de longitud 0 a 9**. Las bien formadas
+  terminan con exactamente la suma que da un oráculo independiente
+  (`tests/oraculos.py`, con `int(x, 2) + int(y, 2)`), sin nada más en la
+  cinta, el resultado terminando en la celda |x|−1, el cabezal sobre su
+  primer símbolo y **exactamente** el número de pasos de la fórmula (con J
+  calculado aparte, con aritmética de enteros), que nunca supera 2n² + n.
+  Las mal formadas se rechazan en la validación sin cambiar la cinta.
+- 200 sumas aleatorias con operandos de 1 a 25 bits y semilla fija.
+- Casos particulares: operandos `0`, ceros a la izquierda y entradas mal
+  formadas.
+- Las 43 transiciones se ejecutan al menos una vez, y los marcadores C y U
+  aparecen durante la ejecución pero no al final.
+
+Además, durante el desarrollo se cambió cada transición, una por una, por
+cada alternativa posible (otro símbolo, otro movimiento, otro estado, o
+eliminarla) y se comprobaron los 860 mutantes con estos mismos criterios
+sobre las cadenas hasta longitud 7. Se detectan 858. Los 2 restantes cambian
+`δ(q9, 1)` o `δ(q9, +)` para que vayan a `q3` en lugar de `q9`. Ese cambio no
+se nota porque q9 solo lee `1` o `+` dentro de y, donde q3 hace exactamente
+lo mismo: escribe igual, se mueve igual y gasta los mismos pasos.
 
 ## Arquitectura
 

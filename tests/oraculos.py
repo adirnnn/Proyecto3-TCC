@@ -13,8 +13,18 @@ def es_ww(cadena: str) -> bool:
     return resto == 0 and cadena[:mitad] == cadena[mitad:]
 
 
-def invertir(cadena: str) -> str:
-    return cadena[::-1]
+def suma_binaria(cadena: str):
+    """Resultado esperado de la MT alteradora, o None si la cadena no
+    tiene la forma x+y con x, y binarios no vacíos.
+
+    La suma conserva el ancho del operando más largo (ceros a la
+    izquierda incluidos) y crece una cifra si queda un acarreo final.
+    """
+    partes = cadena.split("+")
+    if len(partes) != 2 or not all(p and set(p) <= {"0", "1"} for p in partes):
+        return None
+    x, y = partes
+    return format(int(x, 2) + int(y, 2), "b").zfill(max(len(x), len(y)))
 
 
 def todas_las_cadenas(alfabeto: str, longitud_maxima: int):
